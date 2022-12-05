@@ -1,1 +1,1450 @@
-## From the top
+:showtitle:
+:toc: left
+:numbered:
+
+
+
+# Debugging CockroachDB/Go runtime memory allocator
+
+XXX TODO 
+- add to this repo the D script and DTrace output
+- add a tl;dr
+
+
+## Summary
+
+We're here because our system, https://github.com/oxidecomputer/omicron[Omicron], has a test suite with 160+ tests that spin up transient instances of CockroachDB, and in some fraction of these attempts, CockroachDB exits unexpectedly with one of several errors from the Go runtime:
+
+1. https://github.com/oxidecomputer/omicron/issues/1146[fatal error: s.allocCount != s.nelems && freeIndex == s.nelems]
+2. https://github.com/oxidecomputer/omicron/issues/1223#issuecomment-1287328274[fatal error: found pointer to free object]
+3. https://github.com/oxidecomputer/omicron/issues/1223#issuecomment-1292439889[fatal error: sweep increased allocation count]
+
+(We've seen a number of other things that could be related (e.g., SIGSEGV), but these three are the most common and seem likely related.)
+
+Most of the testing has been with CockroachDB using Go 1.17.13.  It's pretty reproducible on some systems when running our whole test suite (within 2-10 minutes).  It's also reproducible when running `cockroach version` in a loop, though that can take quite a while -- up to a day or two.  We have also reproduced https://github.com/golang/go/issues/53289[all of these failures running the Go test suite in a loop] on versions up to Go 1.19.2.  Of course, it's hard to know how many bugs we're looking at and whether these are the same, but there remains at least one issue as recently as 1.19.2.
+
+I'd welcome any help at all, whether answering specific questions about specific failures (see cases 1 and 2 below), steering me toward useful directions, or diving in to help work through this.
+
+## Current status and questions
+
+I've put together a DTrace script that traces:
+
+* every mallocgc call (showing the requested size and returned pointer)
+* every clobberfree operation (so, each time an object is collected by GC)
+* the beginning and end of every mspan sweep, dumping out the essentials of the mspan (including allocBits and gcmarkBits)
+* process exit
+
+It has much lower overhead than allocfreetrace=1 and I've been able to successfully reproduce these failures with this tracing enabled.  I'm also running with `GOTRACEBACK=crash` and `GODEBUG=clobberfree=1`.  I've caught two cases so far, both from an execution of `cockroach version`, where I've got the DTrace output and a core file triggered by the fatal error.
+
+### Case 1: crash during mallocgc
+
+(in my notes, this one's called "repro-2")
+
+[%collapsible%open]
+====
+[source,text]
+----
+runtime: s.allocCount= 28 s.nelems= 56
+fatal error: s.allocCount != s.nelems && freeIndex == s.nelems
+
+goroutine 1 [running, locked to thread]:
+runtime.throw({0x612f80e, 0x31})
+	/opt/ooce/go-1.17/src/runtime/panic.go:1198 +0x74 fp=0xc000a2bdf8 sp=0xc000a2bdc8 pc=0x127d7f4
+runtime.(*mcache).nextFree(0xfffffc7fef0b55b8, 0x16)
+	/opt/ooce/go-1.17/src/runtime/malloc.go:884 +0x228 fp=0xc000a2be38 sp=0xc000a2bdf8 pc=0x124e828
+runtime.mallocgc(0x88, 0x5e490e0, 0x1)
+	/opt/ooce/go-1.17/src/runtime/malloc.go:1077 +0x530 fp=0xc000a2beb8 sp=0xc000a2be38 pc=0x124ed70
+runtime.newobject(...)
+	/opt/ooce/go-1.17/src/runtime/malloc.go:1234
+runtime.mapassign(0x59ef940, 0xc000bef410, 0x87253c8)
+	/opt/ooce/go-1.17/src/runtime/map.go:667 +0x485 fp=0xc000a2bf38 sp=0xc000a2beb8 pc=0x1250ea5
+github.com/aws/aws-sdk-go/aws/endpoints.init()
+	/ws/gc/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/vendor/github.com/aws/aws-sdk-go/aws/endpoints/defaults.go:3321 +0x45dfb fp=0xc000a3f7a8 sp=0xc000a2bf38 pc=0x4e283db
+runtime.doInit(0xaf42440)
+	/opt/ooce/go-1.17/src/runtime/proc.go:6498 +0x129 fp=0xc000a3f8f8 sp=0xc000a3f7a8 pc=0x128ea89
+runtime.doInit(0xaf4b660)
+	/opt/ooce/go-1.17/src/runtime/proc.go:6475 +0x7e fp=0xc000a3fa48 sp=0xc000a3f8f8 pc=0x128e9de
+runtime.doInit(0xaf60ba0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:6475 +0x7e fp=0xc000a3fb98 sp=0xc000a3fa48 pc=0x128e9de
+runtime.doInit(0xaf40340)
+	/opt/ooce/go-1.17/src/runtime/proc.go:6475 +0x7e fp=0xc000a3fce8 sp=0xc000a3fb98 pc=0x128e9de
+runtime.doInit(0xaf98dc0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:6475 +0x7e fp=0xc000a3fe38 sp=0xc000a3fce8 pc=0x128e9de
+runtime.doInit(0xaf38680)
+	/opt/ooce/go-1.17/src/runtime/proc.go:6475 +0x7e fp=0xc000a3ff88 sp=0xc000a3fe38 pc=0x128e9de
+runtime.main()
+	/opt/ooce/go-1.17/src/runtime/proc.go:238 +0x205 fp=0xc000a3ffe0 sp=0xc000a3ff88 pc=0x1280305
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc000a3ffe8 sp=0xc000a3ffe0 pc=0x12b6e81
+
+goroutine 2 [force gc (idle)]:
+runtime.gopark(0x747ba70, 0xb3751f0, 0x11, 0x14, 0x1)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000b0fb0 sp=0xc0000b0f90 pc=0x12807c5
+runtime.goparkunlock(...)
+	/opt/ooce/go-1.17/src/runtime/proc.go:372
+runtime.forcegchelper()
+	/opt/ooce/go-1.17/src/runtime/proc.go:306 +0xc5 fp=0xc0000b0fe0 sp=0xc0000b0fb0 pc=0x1280625
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000b0fe8 sp=0xc0000b0fe0 pc=0x12b6e81
+created by runtime.init.7
+	/opt/ooce/go-1.17/src/runtime/proc.go:294 +0x35
+
+goroutine 3 [runnable]:
+runtime.Gosched(...)
+	/opt/ooce/go-1.17/src/runtime/proc.go:322
+runtime.bgsweep()
+	/opt/ooce/go-1.17/src/runtime/mgcsweep.go:168 +0x13e fp=0xc0000b17e0 sp=0xc0000b17b0 pc=0x1267dbe
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000b17e8 sp=0xc0000b17e0 pc=0x12b6e81
+created by runtime.gcenable
+	/opt/ooce/go-1.17/src/runtime/mgc.go:181 +0x75
+
+goroutine 4 [GC scavenge wait]:
+runtime.gopark(0x747ba70, 0xb380220, 0xd, 0x14, 0x1)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000b1f80 sp=0xc0000b1f60 pc=0x12807c5
+runtime.goparkunlock(...)
+	/opt/ooce/go-1.17/src/runtime/proc.go:372
+runtime.bgscavenge()
+	/opt/ooce/go-1.17/src/runtime/mgcscavenge.go:314 +0x2bb fp=0xc0000b1fe0 sp=0xc0000b1f80 pc=0x1265d9b
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000b1fe8 sp=0xc0000b1fe0 pc=0x12b6e81
+created by runtime.gcenable
+	/opt/ooce/go-1.17/src/runtime/mgc.go:182 +0x8d
+
+goroutine 5 [finalizer wait]:
+runtime.gopark(0x747ba70, 0xb3cba98, 0x10, 0x14, 0x1)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000b0740 sp=0xc0000b0720 pc=0x12807c5
+runtime.goparkunlock(...)
+	/opt/ooce/go-1.17/src/runtime/proc.go:372
+runtime.runfinq()
+	/opt/ooce/go-1.17/src/runtime/mfinal.go:177 +0xc6 fp=0xc0000b07e0 sp=0xc0000b0740 pc=0x125c7c6
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000b07e8 sp=0xc0000b07e0 pc=0x12b6e81
+created by runtime.createfing
+	/opt/ooce/go-1.17/src/runtime/mfinal.go:157 +0x57
+
+goroutine 18 [chan receive]:
+runtime.gopark(0x747b770, 0xc000282418, 0xe, 0x17, 0x2)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000ac6a8 sp=0xc0000ac688 pc=0x12807c5
+runtime.chanrecv(0xc0002823c0, 0xc0000ac7b8, 0x1)
+	/opt/ooce/go-1.17/src/runtime/chan.go:576 +0x5f7 fp=0xc0000ac738 sp=0xc0000ac6a8 pc=0x12474b7
+runtime.chanrecv2(0xc0002823c0, 0xc0000ac7b8)
+	/opt/ooce/go-1.17/src/runtime/chan.go:444 +0x2b fp=0xc0000ac768 sp=0xc0000ac738 pc=0x1246eab
+github.com/cockroachdb/cockroach/pkg/util/log.flushDaemon()
+	/ws/gc/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/pkg/util/log/log_flush.go:75 +0x76 fp=0xc0000ac7e0 sp=0xc0000ac768 pc=0x1d494d6
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000ac7e8 sp=0xc0000ac7e0 pc=0x12b6e81
+created by github.com/cockroachdb/cockroach/pkg/util/log.init.5
+	/ws/gc/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/pkg/util/log/log_flush.go:41 +0x35
+
+goroutine 19 [chan receive]:
+runtime.gopark(0x747b770, 0xc0000de118, 0xe, 0x17, 0x2)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000ace88 sp=0xc0000ace68 pc=0x12807c5
+runtime.chanrecv(0xc0000de0c0, 0xc0000acfb0, 0x1)
+	/opt/ooce/go-1.17/src/runtime/chan.go:576 +0x5f7 fp=0xc0000acf18 sp=0xc0000ace88 pc=0x12474b7
+runtime.chanrecv2(0xc0000de0c0, 0xc0000acfb0)
+	/opt/ooce/go-1.17/src/runtime/chan.go:444 +0x2b fp=0xc0000acf48 sp=0xc0000acf18 pc=0x1246eab
+github.com/cockroachdb/cockroach/pkg/util/log.signalFlusher()
+	/ws/gc/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/pkg/util/log/log_flush.go:98 +0x145 fp=0xc0000acfe0 sp=0xc0000acf48 pc=0x1d497c5
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000acfe8 sp=0xc0000acfe0 pc=0x12b6e81
+created by github.com/cockroachdb/cockroach/pkg/util/log.init.5
+	/ws/gc/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/pkg/util/log/log_flush.go:42 +0x4d
+
+goroutine 6 [select, locked to thread]:
+runtime.gopark(0x747bac8, 0x0, 0x9, 0x18, 0x1)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000bee20 sp=0xc0000bee00 pc=0x12807c5
+runtime.selectgo(0xc0000befa8, 0xc0000b2790, 0x0, 0x0, 0x2, 0x1)
+	/opt/ooce/go-1.17/src/runtime/select.go:327 +0x7b0 fp=0xc0000bef40 sp=0xc0000bee20 pc=0x1291bd0
+runtime.ensureSigM.func1()
+	/opt/ooce/go-1.17/src/runtime/signal_unix.go:890 +0x1f2 fp=0xc0000befe0 sp=0xc0000bef40 pc=0x12ae4f2
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000befe8 sp=0xc0000befe0 pc=0x12b6e81
+created by runtime.ensureSigM
+	/opt/ooce/go-1.17/src/runtime/signal_unix.go:873 +0x105
+
+goroutine 20 [GC worker (idle)]:
+runtime.gopark(0x747b810, 0xc00011bf20, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000ad760 sp=0xc0000ad740 pc=0x12807c5
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0000ad7e0 sp=0xc0000ad760 pc=0x125f6f8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000ad7e8 sp=0xc0000ad7e0 pc=0x12b6e81
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 21 [GC worker (idle)]:
+runtime.gopark(0x747b810, 0xc00020a400, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000adf60 sp=0xc0000adf40 pc=0x12807c5
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0000adfe0 sp=0xc0000adf60 pc=0x125f6f8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000adfe8 sp=0xc0000adfe0 pc=0x12b6e81
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 22 [syscall]:
+runtime.notetsleepg(0xb3ccb60, 0xffffffffffffffff)
+	/opt/ooce/go-1.17/src/runtime/lock_sema.go:295 +0x45 fp=0xc0000ae798 sp=0xc0000ae758 pc=0x124d7a5
+os/signal.signal_recv()
+	/opt/ooce/go-1.17/src/runtime/sigqueue.go:169 +0xab fp=0xc0000ae7c0 sp=0xc0000ae798 pc=0x12b23cb
+os/signal.loop()
+	/opt/ooce/go-1.17/src/os/signal/signal_unix.go:24 +0x25 fp=0xc0000ae7e0 sp=0xc0000ae7c0 pc=0x1d27ba5
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000ae7e8 sp=0xc0000ae7e0 pc=0x12b6e81
+created by os/signal.Notify.func1.1
+	/opt/ooce/go-1.17/src/os/signal/signal.go:151 +0x3a
+
+goroutine 34 [GC worker (idle)]:
+runtime.gopark(0x747b810, 0xc00058a000, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc000586760 sp=0xc000586740 pc=0x12807c5
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0005867e0 sp=0xc000586760 pc=0x125f6f8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0005867e8 sp=0xc0005867e0 pc=0x12b6e81
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 35 [GC worker (idle)]:
+runtime.gopark(0x747b810, 0xc00058a020, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc000586f60 sp=0xc000586f40 pc=0x12807c5
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc000586fe0 sp=0xc000586f60 pc=0x125f6f8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc000586fe8 sp=0xc000586fe0 pc=0x12b6e81
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 36 [GC worker (idle)]:
+runtime.gopark(0x747b810, 0xc00058a040, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc000587760 sp=0xc000587740 pc=0x12807c5
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0005877e0 sp=0xc000587760 pc=0x125f6f8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0005877e8 sp=0xc0005877e0 pc=0x12b6e81
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 37 [GC worker (idle)]:
+runtime.gopark(0x747b810, 0xc00058a060, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc000587f60 sp=0xc000587f40 pc=0x12807c5
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc000587fe0 sp=0xc000587f60 pc=0x125f6f8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc000587fe8 sp=0xc000587fe0 pc=0x12b6e81
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 38 [GC worker (idle)]:
+runtime.gopark(0x747b810, 0xc00058a080, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc000588760 sp=0xc000588740 pc=0x12807c5
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0005887e0 sp=0xc000588760 pc=0x125f6f8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0005887e8 sp=0xc0005887e0 pc=0x12b6e81
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 39 [GC worker (idle)]:
+runtime.gopark(0x747b810, 0xc00058a0a0, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc000588f60 sp=0xc000588f40 pc=0x12807c5
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc000588fe0 sp=0xc000588f60 pc=0x125f6f8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc000588fe8 sp=0xc000588fe0 pc=0x12b6e81
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 40 [GC worker (idle)]:
+runtime.gopark(0x747b810, 0xc00058a0c0, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc000589760 sp=0xc000589740 pc=0x12807c5
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0005897e0 sp=0xc000589760 pc=0x125f6f8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0005897e8 sp=0xc0005897e0 pc=0x12b6e81
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 41 [GC worker (idle)]:
+runtime.gopark(0x747b810, 0xc00058a0e0, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc000589f60 sp=0xc000589f40 pc=0x12807c5
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc000589fe0 sp=0xc000589f60 pc=0x125f6f8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc000589fe8 sp=0xc000589fe0 pc=0x12b6e81
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 42 [GC worker (idle)]:
+runtime.gopark(0x747b810, 0xc00058a100, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc000582760 sp=0xc000582740 pc=0x12807c5
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0005827e0 sp=0xc000582760 pc=0x125f6f8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0005827e8 sp=0xc0005827e0 pc=0x12b6e81
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 43 [GC worker (idle)]:
+runtime.gopark(0x747b810, 0xc00058a120, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000c3f60 sp=0xc0000c3f40 pc=0x12807c5
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0000c3fe0 sp=0xc0000c3f60 pc=0x125f6f8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000c3fe8 sp=0xc0000c3fe0 pc=0x12b6e81
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 44 [GC worker (idle)]:
+runtime.gopark(0x747b810, 0xc00058a140, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc000583760 sp=0xc000583740 pc=0x12807c5
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0005837e0 sp=0xc000583760 pc=0x125f6f8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0005837e8 sp=0xc0005837e0 pc=0x12b6e81
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 45 [GC worker (idle)]:
+runtime.gopark(0x747b810, 0xc00058a160, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc000583f60 sp=0xc000583f40 pc=0x12807c5
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc000583fe0 sp=0xc000583f60 pc=0x125f6f8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc000583fe8 sp=0xc000583fe0 pc=0x12b6e81
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 46 [GC worker (idle)]:
+runtime.gopark(0x747b810, 0xc00058a180, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc000584760 sp=0xc000584740 pc=0x12807c5
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0005847e0 sp=0xc000584760 pc=0x125f6f8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0005847e8 sp=0xc0005847e0 pc=0x12b6e81
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 47 [GC worker (idle)]:
+runtime.gopark(0x747b810, 0xc00058a1a0, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc000584f60 sp=0xc000584f40 pc=0x12807c5
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc000584fe0 sp=0xc000584f60 pc=0x125f6f8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc000584fe8 sp=0xc000584fe0 pc=0x12b6e81
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 52 [chan receive]:
+runtime.gopark(0x747b770, 0xc0001022f8, 0xe, 0x17, 0x2)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000b3de8 sp=0xc0000b3dc8 pc=0x12807c5
+runtime.chanrecv(0xc0001022a0, 0xc0000b3f28, 0x1)
+	/opt/ooce/go-1.17/src/runtime/chan.go:576 +0x5f7 fp=0xc0000b3e78 sp=0xc0000b3de8 pc=0x12474b7
+runtime.chanrecv1(0xc0001022a0, 0xc0000b3f28)
+	/opt/ooce/go-1.17/src/runtime/chan.go:439 +0x2b fp=0xc0000b3ea8 sp=0xc0000b3e78 pc=0x1246e6b
+github.com/cockroachdb/cockroach/pkg/util/goschedstats.init.0.func1()
+	/ws/gc/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/pkg/util/goschedstats/runnable.go:165 +0x1de fp=0xc0000b3fe0 sp=0xc0000b3ea8 pc=0x43b525e
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000b3fe8 sp=0xc0000b3fe0 pc=0x12b6e81
+created by github.com/cockroachdb/cockroach/pkg/util/goschedstats.init.0
+	/ws/gc/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/pkg/util/goschedstats/runnable.go:157 +0x35
+----
+====
+
+I've been using the illumos debugger `mdb` to poke at the core file.  This requires teaching it about a few Go types, but then it can print out `mcache`, `mspan`, etc.  I found the mspan in question by taking the arguments to `nextFree`, an mcache and a spanclass, and looking at the mcache's "alloc" array indexed by the spanclass:
+
+[source,text]
+----
+> fffffc7fef0b55b8::print -at mcache_t
+fffffc7fef0b55b8 mcache_t {
+    fffffc7fef0b55b8 uintptr_t nextSample = 0x1d578
+    fffffc7fef0b55c0 uintptr_t scanAlloc = 0xe00
+    fffffc7fef0b55c8 uintptr_t tiny = 0
+    fffffc7fef0b55d0 uintptr_t tinyoffset = 0
+    fffffc7fef0b55d8 uintptr_t tinyAllocs = 0
+    fffffc7fef0b55e0 mspan_t *[310] alloc = [ cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, 0xfffffc7fee310698, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, 0xfffffc7fe81ebd40, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, 0xfffffc7febf68ea0, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, 0xfffffc7fe81e6f50, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, cockroach`runtime.emptymspan, 0xfffffc7fe81f7350, cockroach`runtime.emptymspan, ... ]
+}
+
+> fffffc7fef0b55b8::print -at mcache_t alloc[0x16]
+fffffc7fef0b5690 mspan_t *alloc[0x16] = 0xfffffc7febf68ea0
+
+> 0xfffffc7febf68ea0::print -at mspan_t
+fffffc7febf68ea0 mspan_t {
+    fffffc7febf68ea0 void *next = 0
+    fffffc7febf68ea8 void *prev = 0
+    fffffc7febf68eb0 void *list = 0
+    fffffc7febf68eb8 uintptr_t startAddr = 0xc000850000
+    fffffc7febf68ec0 uintptr_t npages = 0x1
+    fffffc7febf68ec8 void *manualFreeList = 0
+    fffffc7febf68ed0 uintptr_t freeindex = 0x38
+    fffffc7febf68ed8 uintptr_t nelems = 0x38
+    fffffc7febf68ee0 uint64_t allocCache = 0x9a
+    fffffc7febf68ee8 void *allocBits = 0xfffffc7feeb11088
+    fffffc7febf68ef0 void *gcmarkBits = 0xfffffc7feeb11080
+    fffffc7febf68ef8 uint32_t sweepgen = 0xd
+    fffffc7febf68efc uint32_t divMul = 0x1c71c72
+    fffffc7febf68f00 uint16_t allocCount = 0x1c
+    fffffc7febf68f02 uint8_t spanclass = 0x16
+    fffffc7febf68f03 uint8_t state = 0x1
+    fffffc7febf68f04 uint8_t needzero = 0
+    fffffc7febf68f06 uint16_t allocCountBeforeCache = 0
+    fffffc7febf68f08 uintptr_t elemsize = 0x90
+    fffffc7febf68f10 uintptr_t limit = 0xc000851f80
+}
+----
+
+That looks plausible -- it's got the right spanclass (from the stack trace), allocCount and nelems (from the error message). It's got the right freeindex, too.
+
+I looked through the DTrace output for this failure, looking for sweeps of this span:
+
+[source,text]
+----
+$ grep fffffc7febf68ea0 dtrace-19336.0.out
+dap: span fffffc7febf68ea0: begin sweep
+dap: span fffffc7febf68ea0: begin sweep: allocCount = 1 (0x1)
+dap: span fffffc7febf68ea0: begin sweep: freeindex = 1 (0x1)
+dap: span fffffc7febf68ea0: begin sweep: sweepgen = 7 (0x7)
+dap: span fffffc7febf68ea0: begin sweep: state = 1 (0x1)
+dap: span fffffc7febf68ea0: begin sweep: allocCache = 0x7fffffffffffffff
+dap: span fffffc7febf68ea0: begin sweep: range [ c000276000, c000278000 )
+dap: span fffffc7febf68ea0: begin sweep: nelems = 1 (0x1)
+dap: span fffffc7febf68ea0: begin sweep: elemsize = 8192 (0x2000)
+dap: span fffffc7febf68ea0: begin sweep: npages = 1
+dap: span fffffc7febf68ea0: allocBits:
+dap: span fffffc7febf68ea0: gcmarkBits:
+dap: span fffffc7febf68ea0: clobbering 0xc000276000
+dap: span fffffc7febf68ea0: end sweep
+dap: span fffffc7febf68ea0: end sweep: allocCount = 0 (0x0)
+dap: span fffffc7febf68ea0: end sweep: freeindex = 0 (0x0)
+dap: span fffffc7febf68ea0: end sweep: sweepgen = 8 (0x8)
+dap: span fffffc7febf68ea0: end sweep: state = 0 (0x0)
+dap: span fffffc7febf68ea0: end sweep: allocCache = 0xffffffffffffffff
+dap: span fffffc7febf68ea0: end sweep: range [ c000276000, c000278000 )
+dap: span fffffc7febf68ea0: end sweep: nelems = 1 (0x1)
+dap: span fffffc7febf68ea0: end sweep: elemsize = 8192 (0x2000)
+dap: span fffffc7febf68ea0: end sweep: npages = 1
+dap: span fffffc7febf68ea0: allocBits:
+dap: span fffffc7febf68ea0: begin sweep
+dap: span fffffc7febf68ea0: begin sweep: allocCount = 1 (0x1)
+dap: span fffffc7febf68ea0: begin sweep: freeindex = 1 (0x1)
+dap: span fffffc7febf68ea0: begin sweep: sweepgen = 9 (0x9)
+dap: span fffffc7febf68ea0: begin sweep: state = 1 (0x1)
+dap: span fffffc7febf68ea0: begin sweep: allocCache = 0x7fffffffffffffff
+dap: span fffffc7febf68ea0: begin sweep: range [ c0007ae000, c0007b5f80 )
+dap: span fffffc7febf68ea0: begin sweep: nelems = 5 (0x5)
+dap: span fffffc7febf68ea0: begin sweep: elemsize = 6528 (0x1980)
+dap: span fffffc7febf68ea0: begin sweep: npages = 4
+dap: span fffffc7febf68ea0: allocBits:
+dap: span fffffc7febf68ea0: gcmarkBits:
+dap: span fffffc7febf68ea0: clobbering 0xc0007ae000
+dap: span fffffc7febf68ea0: end sweep
+dap: span fffffc7febf68ea0: end sweep: allocCount = 0 (0x0)
+dap: span fffffc7febf68ea0: end sweep: freeindex = 0 (0x0)
+dap: span fffffc7febf68ea0: end sweep: sweepgen = 10 (0xa)
+dap: span fffffc7febf68ea0: end sweep: state = 0 (0x0)
+dap: span fffffc7febf68ea0: end sweep: allocCache = 0xffffffffffffffff
+dap: span fffffc7febf68ea0: end sweep: range [ c0007ae000, c0007b5f80 )
+dap: span fffffc7febf68ea0: end sweep: nelems = 5 (0x5)
+dap: span fffffc7febf68ea0: end sweep: elemsize = 6528 (0x1980)
+dap: span fffffc7febf68ea0: end sweep: npages = 4
+dap: span fffffc7febf68ea0: allocBits:
+----
+
+It looks like an mspan with this address has been swept twice, but both times it was a different mspan (different range, element size, etc.).  It's never been swept in its current state.  Okay, fair enough.  Its sweep generation above was 0xd.  How does that relate to the current sweepgen?
+
+[source,text]
+----
+> runtime.mheap_::print -at mheap_t
+b3b39e0 mheap_t {
+    b3b39e0 uint8_t [65832] unused = [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x90, 0x2, 0xef, 0x7f, 0xfc, 0xff, 0xff, 0, 0x40, 0, 0, 0, 0, 0, 0, 0, 0x40, 0, 0, 0, 0, 0, 0, ... ]
+    b3c3b08 uint32_t sweepgen = 0xa
+}
+----
+
+(My typedef here is obviously incomplete but I was just trying to get the offset of the "sweepgen" field right.  I got that from the DWARF.)
+
+So its `h->sweepgen+3`, which it looks like means https://github.com/golang/go/blob/b45cb0ce863f3cf91a1847d44a9474aad2a6c592/src/runtime/mheap.go#L474[this mspan is cached].  (I confirmed this happens in mcache.refill().)
+
+So, the assertion is complaining that we've got a span with no free items but allocCount is too low.  So what _is_ allocated?  There are two ways to look at it.  First, I enumerated the addresses covered by the mspan, and for each one, checked whether there's an allocation and/or clobberfree for that address in the DTrace output.  The easiest way to do this was to tell mdb about a "my_buffer" type with the same size as the elements in this mspan and have it enumerate the addresses in an array of `my_buffer` starting at the span's start address:
+
+[source,text]
+----
+> ::typedef 'struct { uint8_t foo[0t144]; }' my_buffer
+> 0xc000850000::array my_buffer 0t56 ! cat > expected-all.txt
+----
+
+Then I searched for each one in the trace output:
+
+[%collapsible]
+====
+[source,text]
+----
+$ cat expected-all.txt | while read x; do echo "searching for $x: "; grep $x dtrace-19336.0.out; echo; done
+searching for c000850000:
+dap: alloc size 0x1fb0 = 0xc000850000
+dap: span fffffc7fee310c70: begin sweep: range [ c000850000, c000852000 )
+dap: span fffffc7fee310c70: clobbering 0xc000850000
+dap: span fffffc7fee310c70: end sweep: range [ c000850000, c000852000 )
+dap: span fffffc7fee310cf8: begin sweep: range [ c00084e000, c000850000 )
+dap: span fffffc7fee310cf8: end sweep: range [ c00084e000, c000850000 )
+dap: span fffffc7fee310cf8: begin sweep: range [ c00084e000, c000850000 )
+dap: span fffffc7fee310cf8: end sweep: range [ c00084e000, c000850000 )
+
+searching for c000850090:
+
+searching for c000850120:
+
+searching for c0008501b0:
+dap: alloc size 0x88 = 0xc0008501b0
+
+searching for c000850240:
+dap: alloc size 0x88 = 0xc000850240
+
+searching for c0008502d0:
+dap: alloc size 0x88 = 0xc0008502d0
+
+searching for c000850360:
+
+searching for c0008503f0:
+
+searching for c000850480:
+
+searching for c000850510:
+
+searching for c0008505a0:
+dap: alloc size 0x88 = 0xc0008505a0
+
+searching for c000850630:
+
+searching for c0008506c0:
+dap: alloc size 0x88 = 0xc0008506c0
+
+searching for c000850750:
+dap: alloc size 0x88 = 0xc000850750
+
+searching for c0008507e0:
+dap: alloc size 0x88 = 0xc0008507e0
+
+searching for c000850870:
+
+searching for c000850900:
+dap: alloc size 0x88 = 0xc000850900
+
+searching for c000850990:
+dap: alloc size 0x88 = 0xc000850990
+
+searching for c000850a20:
+dap: alloc size 0x88 = 0xc000850a20
+
+searching for c000850ab0:
+dap: alloc size 0x88 = 0xc000850ab0
+
+searching for c000850b40:
+
+searching for c000850bd0:
+
+searching for c000850c60:
+dap: alloc size 0x88 = 0xc000850c60
+
+searching for c000850cf0:
+
+searching for c000850d80:
+dap: alloc size 0x88 = 0xc000850d80
+
+searching for c000850e10:
+dap: alloc size 0x88 = 0xc000850e10
+
+searching for c000850ea0:
+dap: alloc size 0x88 = 0xc000850ea0
+
+searching for c000850f30:
+dap: alloc size 0x88 = 0xc000850f30
+
+searching for c000850fc0:
+dap: alloc size 0x88 = 0xc000850fc0
+
+searching for c000851050:
+dap: alloc size 0x88 = 0xc000851050
+
+searching for c0008510e0:
+
+searching for c000851170:
+
+searching for c000851200:
+
+searching for c000851290:
+
+searching for c000851320:
+dap: alloc size 0x88 = 0xc000851320
+
+searching for c0008513b0:
+dap: alloc size 0x88 = 0xc0008513b0
+
+searching for c000851440:
+
+searching for c0008514d0:
+
+searching for c000851560:
+dap: alloc size 0x88 = 0xc000851560
+
+searching for c0008515f0:
+dap: alloc size 0x88 = 0xc0008515f0
+
+searching for c000851680:
+
+searching for c000851710:
+
+searching for c0008517a0:
+
+searching for c000851830:
+
+searching for c0008518c0:
+dap: alloc size 0x88 = 0xc0008518c0
+
+searching for c000851950:
+dap: alloc size 0x88 = 0xc000851950
+
+searching for c0008519e0:
+
+searching for c000851a70:
+
+searching for c000851b00:
+dap: alloc size 0x88 = 0xc000851b00
+
+searching for c000851b90:
+dap: alloc size 0x88 = 0xc000851b90
+
+searching for c000851c20:
+
+searching for c000851cb0:
+
+searching for c000851d40:
+dap: alloc size 0x88 = 0xc000851d40
+
+searching for c000851dd0:
+
+searching for c000851e60:
+dap: alloc size 0x88 = 0xc000851e60
+
+searching for c000851ef0:
+
+----
+====
+
+The very first address has some false positives.  We have a 8112-byte allocation that returned c000850000 -- I infer that this is the allocation for the memory that became the mspan we're inspecting.  Then we swept fffffc7fee310c70, which appears to be that single-element 8192-byte mspan.  Then we swept an unrelated span that just happened to end at c000850000.  I think we can ignore all of those -- this is essentially saying that c000850000 was never allocated from the mspan we're interested in.
+
+Then notice that we didn't allocate a bunch of other addresses (e.g., c000850090, c000850120), but we _did_ allocate some later ones.  This seems weird.  We never freed any of the addresses and, again, we don't seem to have ever swept this mspan.  I summarized it like this:
+
+[%collapsible]
+====
+[source,text]
+----
+$ cat expected-all.txt | while read x; do echo -n "$x: "; if grep "dap: alloc size 0x88 = 0x$x" dtrace-19336.0.out > /dev/null; then echo yes; else echo no; fi; done
+c000850000: no
+c000850090: no
+c000850120: no
+c0008501b0: yes
+c000850240: yes
+c0008502d0: yes
+c000850360: no
+c0008503f0: no
+c000850480: no
+c000850510: no
+c0008505a0: yes
+c000850630: no
+c0008506c0: yes
+c000850750: yes
+c0008507e0: yes
+c000850870: no
+c000850900: yes
+c000850990: yes
+c000850a20: yes
+c000850ab0: yes
+c000850b40: no
+c000850bd0: no
+c000850c60: yes
+c000850cf0: no
+c000850d80: yes
+c000850e10: yes
+c000850ea0: yes
+c000850f30: yes
+c000850fc0: yes
+c000851050: yes
+c0008510e0: no
+c000851170: no
+c000851200: no
+c000851290: no
+c000851320: yes
+c0008513b0: yes
+c000851440: no
+c0008514d0: no
+c000851560: yes
+c0008515f0: yes
+c000851680: no
+c000851710: no
+c0008517a0: no
+c000851830: no
+c0008518c0: yes
+c000851950: yes
+c0008519e0: no
+c000851a70: no
+c000851b00: yes
+c000851b90: yes
+c000851c20: no
+c000851cb0: no
+c000851d40: yes
+c000851dd0: no
+c000851e60: yes
+c000851ef0: no
+----
+====
+
+I also confirmed by hand that they addresses were allocated in address order.
+
+I decided to take a look at allocBits for this span.  I'd expected these bits to be all zeroes because, again, it seems like this span has never been swept, and it looks to me like these are only ever set during sweep.  But what I found is that the allocBits exactly match what the DTrace output shows about which of these are allocated.
+
+[source,text]
+----
+> 0xfffffc7febf68ea0::print -at mspan_t
+fffffc7febf68ea0 mspan_t {
+    fffffc7febf68ea0 void *next = 0
+    fffffc7febf68ea8 void *prev = 0
+    fffffc7febf68eb0 void *list = 0
+    fffffc7febf68eb8 uintptr_t startAddr = 0xc000850000
+    fffffc7febf68ec0 uintptr_t npages = 0x1
+    fffffc7febf68ec8 void *manualFreeList = 0
+    fffffc7febf68ed0 uintptr_t freeindex = 0x38
+    fffffc7febf68ed8 uintptr_t nelems = 0x38
+    fffffc7febf68ee0 uint64_t allocCache = 0x9a
+    fffffc7febf68ee8 void *allocBits = 0xfffffc7feeb11088
+    fffffc7febf68ef0 void *gcmarkBits = 0xfffffc7feeb11080
+    fffffc7febf68ef8 uint32_t sweepgen = 0xd
+    fffffc7febf68efc uint32_t divMul = 0x1c71c72
+    fffffc7febf68f00 uint16_t allocCount = 0x1c
+    fffffc7febf68f02 uint8_t spanclass = 0x16
+    fffffc7febf68f03 uint8_t state = 0x1
+    fffffc7febf68f04 uint8_t needzero = 0
+    fffffc7febf68f06 uint16_t allocCountBeforeCache = 0
+    fffffc7febf68f08 uintptr_t elemsize = 0x90
+    fffffc7febf68f10 uintptr_t limit = 0xc000851f80
+}
+
+# print 8 bytes from allocBits:
+> 0xfffffc7feeb11088,0t8/B
+0xfffffc7feeb11088:             c7      8b      b0      c0      33      cf      ac      b2
+
+# assemble into a little-endian number:
+> 0xb2accf33c0b08bc7=K
+                b2accf33c0b08bc7
+
+# print the 1 bits
+> b2accf33c0b08bc7=j
+                1011001010101100110011110011001111000000101100001000101111000111
+                | ||  | | | ||  ||  ||||  ||  ||||      | ||    |   | ||||   |||
+                | ||  | | | ||  ||  ||||  ||  ||||      | ||    |   | ||||   ||+-- bit 0  mask 0x0000000000000001
+                | ||  | | | ||  ||  ||||  ||  ||||      | ||    |   | ||||   |+--- bit 1  mask 0x0000000000000002
+                | ||  | | | ||  ||  ||||  ||  ||||      | ||    |   | ||||   +---- bit 2  mask 0x0000000000000004
+                | ||  | | | ||  ||  ||||  ||  ||||      | ||    |   | |||+-------- bit 6  mask 0x0000000000000040
+                | ||  | | | ||  ||  ||||  ||  ||||      | ||    |   | ||+--------- bit 7  mask 0x0000000000000080
+                | ||  | | | ||  ||  ||||  ||  ||||      | ||    |   | |+---------- bit 8  mask 0x0000000000000100
+                | ||  | | | ||  ||  ||||  ||  ||||      | ||    |   | +----------- bit 9  mask 0x0000000000000200
+                | ||  | | | ||  ||  ||||  ||  ||||      | ||    |   +------------- bit 11 mask 0x0000000000000800
+                | ||  | | | ||  ||  ||||  ||  ||||      | ||    +----------------- bit 15 mask 0x0000000000008000
+                | ||  | | | ||  ||  ||||  ||  ||||      | |+---------------------- bit 20 mask 0x0000000000100000
+                | ||  | | | ||  ||  ||||  ||  ||||      | +----------------------- bit 21 mask 0x0000000000200000
+                | ||  | | | ||  ||  ||||  ||  ||||      +------------------------- bit 23 mask 0x0000000000800000
+                | ||  | | | ||  ||  ||||  ||  |||+-------------------------------- bit 30 mask 0x0000000040000000
+                | ||  | | | ||  ||  ||||  ||  ||+--------------------------------- bit 31 mask 0x0000000080000000
+                | ||  | | | ||  ||  ||||  ||  |+---------------------------------- bit 32 mask 0x0000000100000000
+                | ||  | | | ||  ||  ||||  ||  +----------------------------------- bit 33 mask 0x0000000200000000
+                | ||  | | | ||  ||  ||||  |+-------------------------------------- bit 36 mask 0x0000001000000000
+                | ||  | | | ||  ||  ||||  +--------------------------------------- bit 37 mask 0x0000002000000000
+                | ||  | | | ||  ||  |||+------------------------------------------ bit 40 mask 0x0000010000000000
+                | ||  | | | ||  ||  ||+------------------------------------------- bit 41 mask 0x0000020000000000
+                | ||  | | | ||  ||  |+-------------------------------------------- bit 42 mask 0x0000040000000000
+                | ||  | | | ||  ||  +--------------------------------------------- bit 43 mask 0x0000080000000000
+                | ||  | | | ||  |+------------------------------------------------ bit 46 mask 0x0000400000000000
+                | ||  | | | ||  +------------------------------------------------- bit 47 mask 0x0000800000000000
+                | ||  | | | |+---------------------------------------------------- bit 50 mask 0x0004000000000000
+                | ||  | | | +----------------------------------------------------- bit 51 mask 0x0008000000000000
+                | ||  | | +------------------------------------------------------- bit 53 mask 0x0020000000000000
+                | ||  | +--------------------------------------------------------- bit 55 mask 0x0080000000000000
+                | ||  +----------------------------------------------------------- bit 57 mask 0x0200000000000000
+                | |+-------------------------------------------------------------- bit 60 mask 0x1000000000000000
+                | +--------------------------------------------------------------- bit 61 mask 0x2000000000000000
+                +----------------------------------------------------------------- bit 63 mask 0x8000000000000000
+----
+
+Now, I expected bits 56-63 to be 0, but they shouldn't matter anyway.  The rest of these bits align exactly with the _unallocated_ items.  This is surprising to me on two levels: if this mspan has never been swept, I'd expect these to be all zeroes.  If for some reason it has been swept and these accurately reflect what's allocated, they appear to be inverted, right?
+
+I also checked `allocCache` (0x9a).  This is the result of inverting the above and shifting it by 55:
+
+[source,text]
+----
+> ~b2accf33c0b08bc7>>0t55=K
+                9a
+----
+
+So that's pretty self-consistent, though I'm not sure why it took 55 shifts and not 56.
+
+There's a lot that's confusing here:
+
+1. Did we ever sweep this mspan or not?  The trace output strongly suggests not -- not just that we don't see one, but we also don't see allocation addresses from this mspan ever going backwards (as would happen if we swept it and set freeindex = 0).
+2. But then how did allocBits get set to something that seems close to accurate?
+3. Most importantly: from my read of the code, Go should always allocate consecutive addresses from an mspan until it is swept the first time.  How did we manage to skip some addresses?
+
+### Case 2: zombies
+
+(in my notes, this one's called "repro-3")
+
+Similar initial conditions (running `cockroach version` with my DTrace script, plus GOTRACEBACK=crash GODEBUG=cloberfree=1), but this time we failed during sweeping:
+
+[%collapsible%open]
+====
+[source,text]
+----
+runtime: marked free object in span 0xfffffc7fee33af40, elemsize=144 freeindex=44 (bad use of unsafe.Pointer? try -d=checkptr)
+0xc000f20000 alloc marked
+0xc000f20090 alloc marked
+0xc000f20120 alloc marked
+0xc000f201b0 alloc marked
+0xc000f20240 alloc marked
+0xc000f202d0 alloc marked
+0xc000f20360 alloc marked
+0xc000f203f0 alloc marked
+0xc000f20480 alloc marked
+0xc000f20510 alloc marked
+0xc000f205a0 alloc marked
+0xc000f20630 alloc marked
+0xc000f206c0 alloc marked
+0xc000f20750 alloc marked
+0xc000f207e0 alloc marked
+0xc000f20870 alloc marked
+0xc000f20900 alloc marked
+0xc000f20990 alloc marked
+0xc000f20a20 alloc marked
+0xc000f20ab0 alloc marked
+0xc000f20b40 alloc marked
+0xc000f20bd0 alloc marked
+0xc000f20c60 alloc marked
+0xc000f20cf0 alloc marked
+0xc000f20d80 alloc marked
+0xc000f20e10 alloc marked
+0xc000f20ea0 alloc marked
+0xc000f20f30 alloc marked
+0xc000f20fc0 alloc marked
+0xc000f21050 alloc marked
+0xc000f210e0 alloc marked
+0xc000f21170 alloc marked
+0xc000f21200 alloc marked
+0xc000f21290 alloc marked
+0xc000f21320 alloc marked
+0xc000f213b0 alloc marked
+0xc000f21440 alloc marked
+0xc000f214d0 alloc marked
+0xc000f21560 alloc marked
+0xc000f215f0 alloc marked
+0xc000f21680 alloc marked
+0xc000f21710 alloc marked
+0xc000f217a0 alloc marked
+0xc000f21830 alloc marked
+0xc000f218c0 free  marked   zombie
+0x000000c000f218c0:  0x0000000000000000  0x0000000000000000
+0x000000c000f218d0:  0x0000000000000000  0x0000000000000000
+0x000000c000f218e0:  0x0000000000000000  0x0000000000000000
+0x000000c000f218f0:  0x0000000000000000  0x0000000000000000
+0x000000c000f21900:  0x0000000000000000  0x0000000000000000
+0x000000c000f21910:  0x0000000000000000  0x0000000000000000
+0x000000c000f21920:  0x0000000000000000  0x0000000000000000
+0x000000c000f21930:  0x0000000000000000  0x0000000000000000
+0x000000c000f21940:  0x0000000000000000  0x0000000000000000
+0xc000f21950 free  marked   zombie
+0x000000c000f21950:  0x0000000000000000  0x0000000000000000
+0x000000c000f21960:  0x0000000000000000  0x0000000000000000
+0x000000c000f21970:  0x0000000000000000  0x0000000000000000
+0x000000c000f21980:  0x0000000000000000  0x0000000000000000
+0x000000c000f21990:  0x0000000000000000  0x0000000000000000
+0x000000c000f219a0:  0x0000000000000000  0x0000000000000000
+0x000000c000f219b0:  0x0000000000000000  0x0000000000000000
+0x000000c000f219c0:  0x0000000000000000  0x0000000000000000
+0x000000c000f219d0:  0x0000000000000000  0x0000000000000000
+0xc000f219e0 free  unmarked
+0xc000f21a70 free  unmarked
+0xc000f21b00 free  marked   zombie
+0x000000c000f21b00:  0x0000000000000000  0x0000000000000000
+0x000000c000f21b10:  0x0000000000000000  0x0000000000000000
+0x000000c000f21b20:  0x0000000000000000  0x0000000000000000
+0x000000c000f21b30:  0x0000000000000000  0x0000000000000000
+0x000000c000f21b40:  0x0000000000000000  0x0000000000000000
+0x000000c000f21b50:  0x0000000000000000  0x0000000000000000
+0x000000c000f21b60:  0x0000000000000000  0x0000000000000000
+0x000000c000f21b70:  0x0000000000000000  0x0000000000000000
+0x000000c000f21b80:  0x0000000000000000  0x0000000000000000
+0xc000f21b90 free  unmarked
+0xc000f21c20 free  marked   zombie
+0x000000c000f21c20:  0x0000000000000000  0x0000000000000000
+0x000000c000f21c30:  0x0000000000000000  0x0000000000000000
+0x000000c000f21c40:  0x0000000000000000  0x0000000000000000
+0x000000c000f21c50:  0x0000000000000000  0x0000000000000000
+0x000000c000f21c60:  0x0000000000000000  0x0000000000000000
+0x000000c000f21c70:  0x0000000000000000  0x0000000000000000
+0x000000c000f21c80:  0x0000000000000000  0x0000000000000000
+0x000000c000f21c90:  0x0000000000000000  0x0000000000000000
+0x000000c000f21ca0:  0x0000000000000000  0x0000000000000000
+0xc000f21cb0 free  unmarked
+0xc000f21d40 free  marked   zombie
+0x000000c000f21d40:  0x0000000000000000  0x0000000000000000
+0x000000c000f21d50:  0x0000000000000000  0x0000000000000000
+0x000000c000f21d60:  0x0000000000000000  0x0000000000000000
+0x000000c000f21d70:  0x0000000000000000  0x0000000000000000
+0x000000c000f21d80:  0x0000000000000000  0x0000000000000000
+0x000000c000f21d90:  0x0000000000000000  0x0000000000000000
+0x000000c000f21da0:  0x0000000000000000  0x0000000000000000
+0x000000c000f21db0:  0x0000000000000000  0x0000000000000000
+0x000000c000f21dc0:  0x0000000000000000  0x0000000000000000
+0xc000f21dd0 free  unmarked
+0xc000f21e60 free  marked   zombie
+0x000000c000f21e60:  0x0000000000000000  0x0000000000000000
+0x000000c000f21e70:  0x0000000000000000  0x0000000000000000
+0x000000c000f21e80:  0x0000000000000000  0x0000000000000000
+0x000000c000f21e90:  0x0000000000000000  0x0000000000000000
+0x000000c000f21ea0:  0x0000000000000000  0x0000000000000000
+0x000000c000f21eb0:  0x0000000000000000  0x0000000000000000
+0x000000c000f21ec0:  0x0000000000000000  0x0000000000000000
+0x000000c000f21ed0:  0x0000000000000000  0x0000000000000000
+0x000000c000f21ee0:  0x0000000000000000  0x0000000000000000
+0xc000f21ef0 free  marked   zombie
+0x000000c000f21ef0:  0x0000000000000000  0x0000000000000000
+0x000000c000f21f00:  0x0000000000000000  0x0000000000000000
+0x000000c000f21f10:  0x0000000000000000  0x0000000000000000
+0x000000c000f21f20:  0x0000000000000000  0x0000000000000000
+0x000000c000f21f30:  0x0000000000000000  0x0000000000000000
+0x000000c000f21f40:  0x0000000000000000  0x0000000000000000
+0x000000c000f21f50:  0x0000000000000000  0x0000000000000000
+0x000000c000f21f60:  0x0000000000000000  0x0000000000000000
+0x000000c000f21f70:  0x0000000000000000  0x0000000000000000
+fatal error: found pointer to free object
+
+runtime stack:
+runtime.throw({0x6097e1e, 0x1c})
+	/opt/ooce/go-1.17/src/runtime/panic.go:1198 +0x74 fp=0xfffffc7fe9fffb40 sp=0xfffffc7fe9fffb10 pc=0x127d6b4
+runtime.(*mspan).reportZombies(0xfffffc7fee33af40)
+	/opt/ooce/go-1.17/src/runtime/mgcsweep.go:691 +0x345 fp=0xfffffc7fe9fffbc0 sp=0xfffffc7fe9fffb40 pc=0x1269505
+runtime.(*sweepLocked).sweep(0xfffffc7fe9fffcc0, 0x0)
+	/opt/ooce/go-1.17/src/runtime/mgcsweep.go:519 +0x35a fp=0xfffffc7fe9fffca8 sp=0xfffffc7fe9fffbc0 pc=0x126881a
+runtime.(*mcentral).uncacheSpan(0xb3dc9e8, 0xfffffc7fee33af40)
+	/opt/ooce/go-1.17/src/runtime/mcentral.go:223 +0xcf fp=0xfffffc7fe9fffcd8 sp=0xfffffc7fe9fffca8 pc=0x125a18f
+runtime.(*mcache).releaseAll(0xfffffc7fef1f8108)
+	/opt/ooce/go-1.17/src/runtime/mcache.go:279 +0x134 fp=0xfffffc7fe9fffd20 sp=0xfffffc7fe9fffcd8 pc=0x1259694
+runtime.(*mcache).prepareForSweep(0xfffffc7fef1f8108)
+	/opt/ooce/go-1.17/src/runtime/mcache.go:317 +0x46 fp=0xfffffc7fe9fffd48 sp=0xfffffc7fe9fffd20 pc=0x12597a6
+runtime.acquirep(0xc000082000)
+	/opt/ooce/go-1.17/src/runtime/proc.go:5141 +0x3d fp=0xfffffc7fe9fffd60 sp=0xfffffc7fe9fffd48 pc=0x128bedd
+runtime.stopm()
+	/opt/ooce/go-1.17/src/runtime/proc.go:2409 +0xab fp=0xfffffc7fe9fffd88 sp=0xfffffc7fe9fffd60 pc=0x12848ab
+runtime.gcstopm()
+	/opt/ooce/go-1.17/src/runtime/proc.go:2658 +0xcc fp=0xfffffc7fe9fffdb0 sp=0xfffffc7fe9fffd88 pc=0x128548c
+runtime.findrunnable()
+	/opt/ooce/go-1.17/src/runtime/proc.go:2715 +0x59 fp=0xfffffc7fe9fffea8 sp=0xfffffc7fe9fffdb0 pc=0x1285699
+runtime.schedule()
+	/opt/ooce/go-1.17/src/runtime/proc.go:3367 +0x297 fp=0xfffffc7fe9ffff08 sp=0xfffffc7fe9fffea8 pc=0x1287277
+runtime.park_m(0xc0001b3860)
+	/opt/ooce/go-1.17/src/runtime/proc.go:3516 +0x18e fp=0xfffffc7fe9ffff38 sp=0xfffffc7fe9ffff08 pc=0x128788e
+runtime.mcall()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:337 +0x63 fp=0xfffffc7fe9ffff48 sp=0xfffffc7fe9ffff38 pc=0x12b4b23
+
+goroutine 1 [runnable, locked to thread]:
+runtime.mapassign(0x59ef800, 0xc000efc600, 0xc000b6eab8)
+	/opt/ooce/go-1.17/src/runtime/map.go:571 +0x585 fp=0xc000b6bf38 sp=0xc000b6bf30 pc=0x1250e65
+github.com/aws/aws-sdk-go/aws/endpoints.init()
+	/home/dap/garbage-compactor/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/vendor/github.com/aws/aws-sdk-go/aws/endpoints/defaults.go:3916 +0x52ec7 fp=0xc000b7f7a8 sp=0xc000b6bf38 pc=0x4e35367
+runtime.doInit(0xaf5a160)
+	/opt/ooce/go-1.17/src/runtime/proc.go:6498 +0x129 fp=0xc000b7f8f8 sp=0xc000b7f7a8 pc=0x128e949
+runtime.doInit(0xaf63380)
+	/opt/ooce/go-1.17/src/runtime/proc.go:6475 +0x7e fp=0xc000b7fa48 sp=0xc000b7f8f8 pc=0x128e89e
+runtime.doInit(0xaf788c0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:6475 +0x7e fp=0xc000b7fb98 sp=0xc000b7fa48 pc=0x128e89e
+runtime.doInit(0xaf58060)
+	/opt/ooce/go-1.17/src/runtime/proc.go:6475 +0x7e fp=0xc000b7fce8 sp=0xc000b7fb98 pc=0x128e89e
+runtime.doInit(0xafb0ae0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:6475 +0x7e fp=0xc000b7fe38 sp=0xc000b7fce8 pc=0x128e89e
+runtime.doInit(0xaf503a0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:6475 +0x7e fp=0xc000b7ff88 sp=0xc000b7fe38 pc=0x128e89e
+runtime.main()
+	/opt/ooce/go-1.17/src/runtime/proc.go:238 +0x205 fp=0xc000b7ffe0 sp=0xc000b7ff88 pc=0x12801c5
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc000b7ffe8 sp=0xc000b7ffe0 pc=0x12b6d41
+
+goroutine 2 [force gc (idle)]:
+runtime.gopark(0x747b930, 0xb38cf30, 0x11, 0x14, 0x1)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000aefb0 sp=0xc0000aef90 pc=0x1280685
+runtime.goparkunlock(...)
+	/opt/ooce/go-1.17/src/runtime/proc.go:372
+runtime.forcegchelper()
+	/opt/ooce/go-1.17/src/runtime/proc.go:306 +0xc5 fp=0xc0000aefe0 sp=0xc0000aefb0 pc=0x12804e5
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000aefe8 sp=0xc0000aefe0 pc=0x12b6d41
+created by runtime.init.7
+	/opt/ooce/go-1.17/src/runtime/proc.go:294 +0x35
+
+goroutine 3 [runnable]:
+runtime.gopark(0x747b930, 0xb396e60, 0xc, 0x14, 0x1)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000af7b0 sp=0xc0000af790 pc=0x1280685
+runtime.goparkunlock(...)
+	/opt/ooce/go-1.17/src/runtime/proc.go:372
+runtime.bgsweep()
+	/opt/ooce/go-1.17/src/runtime/mgcsweep.go:182 +0x10d fp=0xc0000af7e0 sp=0xc0000af7b0 pc=0x1267c4d
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000af7e8 sp=0xc0000af7e0 pc=0x12b6d41
+created by runtime.gcenable
+	/opt/ooce/go-1.17/src/runtime/mgc.go:181 +0x75
+
+goroutine 4 [GC scavenge wait]:
+runtime.gopark(0x747b930, 0xb397f60, 0xd, 0x14, 0x1)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000aff80 sp=0xc0000aff60 pc=0x1280685
+runtime.goparkunlock(...)
+	/opt/ooce/go-1.17/src/runtime/proc.go:372
+runtime.bgscavenge()
+	/opt/ooce/go-1.17/src/runtime/mgcscavenge.go:314 +0x2bb fp=0xc0000affe0 sp=0xc0000aff80 pc=0x1265c5b
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000affe8 sp=0xc0000affe0 pc=0x12b6d41
+created by runtime.gcenable
+	/opt/ooce/go-1.17/src/runtime/mgc.go:182 +0x8d
+
+goroutine 5 [finalizer wait]:
+runtime.gopark(0x747b930, 0xb3e37d8, 0x10, 0x14, 0x1)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000ae740 sp=0xc0000ae720 pc=0x1280685
+runtime.goparkunlock(...)
+	/opt/ooce/go-1.17/src/runtime/proc.go:372
+runtime.runfinq()
+	/opt/ooce/go-1.17/src/runtime/mfinal.go:177 +0xc6 fp=0xc0000ae7e0 sp=0xc0000ae740 pc=0x125c686
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000ae7e8 sp=0xc0000ae7e0 pc=0x12b6d41
+created by runtime.createfing
+	/opt/ooce/go-1.17/src/runtime/mfinal.go:157 +0x57
+
+goroutine 18 [chan receive]:
+runtime.gopark(0x747b630, 0xc000102238, 0xe, 0x17, 0x2)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000aa6a8 sp=0xc0000aa688 pc=0x1280685
+runtime.chanrecv(0xc0001021e0, 0xc0000aa7b8, 0x1)
+	/opt/ooce/go-1.17/src/runtime/chan.go:576 +0x5f7 fp=0xc0000aa738 sp=0xc0000aa6a8 pc=0x1247377
+runtime.chanrecv2(0xc0001021e0, 0xc0000aa7b8)
+	/opt/ooce/go-1.17/src/runtime/chan.go:444 +0x2b fp=0xc0000aa768 sp=0xc0000aa738 pc=0x1246d6b
+github.com/cockroachdb/cockroach/pkg/util/log.flushDaemon()
+	/home/dap/garbage-compactor/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/pkg/util/log/log_flush.go:75 +0x76 fp=0xc0000aa7e0 sp=0xc0000aa768 pc=0x1d49396
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000aa7e8 sp=0xc0000aa7e0 pc=0x12b6d41
+created by github.com/cockroachdb/cockroach/pkg/util/log.init.5
+	/home/dap/garbage-compactor/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/pkg/util/log/log_flush.go:41 +0x35
+
+goroutine 19 [chan receive]:
+runtime.gopark(0x747b630, 0xc0000da118, 0xe, 0x17, 0x2)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000aae88 sp=0xc0000aae68 pc=0x1280685
+runtime.chanrecv(0xc0000da0c0, 0xc0000aafb0, 0x1)
+	/opt/ooce/go-1.17/src/runtime/chan.go:576 +0x5f7 fp=0xc0000aaf18 sp=0xc0000aae88 pc=0x1247377
+runtime.chanrecv2(0xc0000da0c0, 0xc0000aafb0)
+	/opt/ooce/go-1.17/src/runtime/chan.go:444 +0x2b fp=0xc0000aaf48 sp=0xc0000aaf18 pc=0x1246d6b
+github.com/cockroachdb/cockroach/pkg/util/log.signalFlusher()
+	/home/dap/garbage-compactor/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/pkg/util/log/log_flush.go:98 +0x145 fp=0xc0000aafe0 sp=0xc0000aaf48 pc=0x1d49685
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000aafe8 sp=0xc0000aafe0 pc=0x12b6d41
+created by github.com/cockroachdb/cockroach/pkg/util/log.init.5
+	/home/dap/garbage-compactor/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/pkg/util/log/log_flush.go:42 +0x4d
+
+goroutine 6 [select, locked to thread]:
+runtime.gopark(0x747b988, 0x0, 0x9, 0x18, 0x1)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000b0620 sp=0xc0000b0600 pc=0x1280685
+runtime.selectgo(0xc0000b07a8, 0xc0000b0790, 0x0, 0x0, 0x2, 0x1)
+	/opt/ooce/go-1.17/src/runtime/select.go:327 +0x7b0 fp=0xc0000b0740 sp=0xc0000b0620 pc=0x1291a90
+runtime.ensureSigM.func1()
+	/opt/ooce/go-1.17/src/runtime/signal_unix.go:890 +0x1f2 fp=0xc0000b07e0 sp=0xc0000b0740 pc=0x12ae3b2
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000b07e8 sp=0xc0000b07e0 pc=0x12b6d41
+created by runtime.ensureSigM
+	/opt/ooce/go-1.17/src/runtime/signal_unix.go:873 +0x105
+
+goroutine 7 [syscall]:
+runtime.notetsleepg(0xb3e48a0, 0xffffffffffffffff)
+	/opt/ooce/go-1.17/src/runtime/lock_sema.go:295 +0x45 fp=0xc0000b0f98 sp=0xc0000b0f58 pc=0x124d665
+os/signal.signal_recv()
+	/opt/ooce/go-1.17/src/runtime/sigqueue.go:169 +0xab fp=0xc0000b0fc0 sp=0xc0000b0f98 pc=0x12b228b
+os/signal.loop()
+	/opt/ooce/go-1.17/src/os/signal/signal_unix.go:24 +0x25 fp=0xc0000b0fe0 sp=0xc0000b0fc0 pc=0x1d27a65
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000b0fe8 sp=0xc0000b0fe0 pc=0x12b6d41
+created by os/signal.Notify.func1.1
+	/opt/ooce/go-1.17/src/os/signal/signal.go:151 +0x3a
+
+goroutine 20 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc000116260, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000ab760 sp=0xc0000ab740 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0000ab7e0 sp=0xc0000ab760 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000ab7e8 sp=0xc0000ab7e0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 34 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc000116280, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0001ae760 sp=0xc0001ae740 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0001ae7e0 sp=0xc0001ae760 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0001ae7e8 sp=0xc0001ae7e0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 35 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc00007c080, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0001aef60 sp=0xc0001aef40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0001aefe0 sp=0xc0001aef60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0001aefe8 sp=0xc0001aefe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 36 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc0004ec0c0, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0001af760 sp=0xc0001af740 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0001af7e0 sp=0xc0001af760 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0001af7e8 sp=0xc0001af7e0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 21 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc0004ec0e0, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000abf60 sp=0xc0000abf40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0000abfe0 sp=0xc0000abf60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000abfe8 sp=0xc0000abfe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 22 [running]:
+	goroutine running on other thread; stack unavailable
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 8 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc0001162a0, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000b1760 sp=0xc0000b1740 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0000b17e0 sp=0xc0000b1760 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000b17e8 sp=0xc0000b17e0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 37 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc0004ec100, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0001aff60 sp=0xc0001aff40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0001affe0 sp=0xc0001aff60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0001affe8 sp=0xc0001affe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 23 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc00007c0c0, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000acf60 sp=0xc0000acf40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0000acfe0 sp=0xc0000acf60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000acfe8 sp=0xc0000acfe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 9 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc0001162c0, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000b1f60 sp=0xc0000b1f40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0000b1fe0 sp=0xc0000b1f60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000b1fe8 sp=0xc0000b1fe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 38 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc0004ec120, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000bcf60 sp=0xc0000bcf40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0000bcfe0 sp=0xc0000bcf60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000bcfe8 sp=0xc0000bcfe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 24 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc00007c0e0, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000c1f60 sp=0xc0000c1f40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0000c1fe0 sp=0xc0000c1f60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000c1fe8 sp=0xc0000c1fe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 10 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc0001162e0, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0001aa760 sp=0xc0001aa740 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0001aa7e0 sp=0xc0001aa760 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0001aa7e8 sp=0xc0001aa7e0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 39 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc0004ec140, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0001b0f60 sp=0xc0001b0f40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0001b0fe0 sp=0xc0001b0f60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0001b0fe8 sp=0xc0001b0fe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 25 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc00007c100, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000adf60 sp=0xc0000adf40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0000adfe0 sp=0xc0000adf60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000adfe8 sp=0xc0000adfe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 11 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc000116300, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc000754f60 sp=0xc000754f40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc000754fe0 sp=0xc000754f60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc000754fe8 sp=0xc000754fe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 67 [chan receive]:
+runtime.gopark(0x747b630, 0xc000758b98, 0xe, 0x17, 0x2)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0001acde8 sp=0xc0001acdc8 pc=0x1280685
+runtime.chanrecv(0xc000758b40, 0xc0001acf28, 0x1)
+	/opt/ooce/go-1.17/src/runtime/chan.go:576 +0x5f7 fp=0xc0001ace78 sp=0xc0001acde8 pc=0x1247377
+runtime.chanrecv1(0xc000758b40, 0xc0001acf28)
+	/opt/ooce/go-1.17/src/runtime/chan.go:439 +0x2b fp=0xc0001acea8 sp=0xc0001ace78 pc=0x1246d2b
+github.com/cockroachdb/cockroach/pkg/util/goschedstats.init.0.func1()
+	/home/dap/garbage-compactor/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/pkg/util/goschedstats/runnable.go:165 +0x1de fp=0xc0001acfe0 sp=0xc0001acea8 pc=0x43b511e
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0001acfe8 sp=0xc0001acfe0 pc=0x12b6d41
+created by github.com/cockroachdb/cockroach/pkg/util/goschedstats.init.0
+	/home/dap/garbage-compactor/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/pkg/util/goschedstats/runnable.go:157 +0x35
+----
+====
+
+Here we have an explicit span (`0xfffffc7fee33af40`).  Its startAddr/limit, elemsize, and freeindex all match the message:
+
+[source,text]
+----
+> 0xfffffc7fee33af40::print mspan_t
+{
+    next = 0
+    prev = 0
+    list = 0
+    startAddr = 0xc000f20000
+    npages = 0x1
+    manualFreeList = 0
+    freeindex = 0x2c
+    nelems = 0x38
+    allocCache = 0xfffff
+    allocBits = 0xfffffc7fe60900a8
+    gcmarkBits = 0xfffffc7fe60900a0
+    sweepgen = 0x9
+    divMul = 0x1c71c72
+    allocCount = 0x2c
+    spanclass = 0x16
+    state = 0x1
+    needzero = 0
+    allocCountBeforeCache = 0
+    elemsize = 0x90
+    limit = 0xc000f21f80
+}
+----
+
+This time the sweepgen is 0xa, so we're currently sweeping this span -- which of course we already knew:
+
+[source,text]
+----
+> runtime.mheap_::print -t mheap_t
+mheap_t {
+    uint8_t [65832] unused = [ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xd0, 0x1c, 0xef, 0x7f, 0xfc, 0xff, 0xff, 0, 0x40, 0, 0, 0, 0, 0, 0, 0, 0x40, 0, 0, 0, 0, 0, 0, ... ]
+    uint32_t sweepgen = 0xa
+}
+----
+
+What does our DTrace output show?
+
+[source,text]
+----
+    $ grep fffffc7fee33af40 dtrace.out
+    dap: span fffffc7fee33af40: begin sweep
+    dap: span fffffc7fee33af40: begin sweep: allocCount = 44 (0x2c)
+    dap: span fffffc7fee33af40: begin sweep: freeindex = 44 (0x2c)
+    dap: span fffffc7fee33af40: begin sweep: sweepgen = 9 (0x9)
+    dap: span fffffc7fee33af40: begin sweep: state = 1 (0x1)
+    dap: span fffffc7fee33af40: begin sweep: allocCache = 0xfffff
+    dap: span fffffc7fee33af40: begin sweep: range [ c000f20000, c000f21f80 )
+    dap: span fffffc7fee33af40: begin sweep: nelems = 56 (0x38)
+    dap: span fffffc7fee33af40: begin sweep: elemsize = 144 (0x90)
+    dap: span fffffc7fee33af40: begin sweep: npages = 1
+    dap: span fffffc7fee33af40: allocBits:
+    dap: span fffffc7fee33af40: gcmarkBits:
+    $
+----
+
+Okay, we appear to be in the middle of the first sweep.  Now, we've supposedly allocated 0x2c = 44 items.  So we'd expect the first 44 144-byte objects from c000f20000 to be allocated.  Confirmed, this matches the Go error message and the DTrace output:
+
+[source,text]
+----
+$ awk '/alloc marked/{ print $1 }' cockroach-version.out  | awk -Fx '{print $2}' | while read addr; do echo -n "check: $addr: "; grep $addr dtrace.out ; done
+check: c000f20000: dap: alloc size 0x88 = 0xc000f20000
+dap: span fffffc7fee33af40: begin sweep: range [ c000f20000, c000f21f80 )
+check: c000f20090: dap: alloc size 0x88 = 0xc000f20090
+check: c000f20120: dap: alloc size 0x88 = 0xc000f20120
+check: c000f201b0: dap: alloc size 0x88 = 0xc000f201b0
+check: c000f20240: dap: alloc size 0x88 = 0xc000f20240
+check: c000f202d0: dap: alloc size 0x88 = 0xc000f202d0
+check: c000f20360: dap: alloc size 0x88 = 0xc000f20360
+check: c000f203f0: dap: alloc size 0x88 = 0xc000f203f0
+check: c000f20480: dap: alloc size 0x88 = 0xc000f20480
+check: c000f20510: dap: alloc size 0x88 = 0xc000f20510
+check: c000f205a0: dap: alloc size 0x88 = 0xc000f205a0
+check: c000f20630: dap: alloc size 0x88 = 0xc000f20630
+check: c000f206c0: dap: alloc size 0x88 = 0xc000f206c0
+check: c000f20750: dap: alloc size 0x88 = 0xc000f20750
+check: c000f207e0: dap: alloc size 0x88 = 0xc000f207e0
+check: c000f20870: dap: alloc size 0x88 = 0xc000f20870
+check: c000f20900: dap: alloc size 0x88 = 0xc000f20900
+check: c000f20990: dap: alloc size 0x88 = 0xc000f20990
+check: c000f20a20: dap: alloc size 0x88 = 0xc000f20a20
+check: c000f20ab0: dap: alloc size 0x88 = 0xc000f20ab0
+check: c000f20b40: dap: alloc size 0x88 = 0xc000f20b40
+check: c000f20bd0: dap: alloc size 0x88 = 0xc000f20bd0
+check: c000f20c60: dap: alloc size 0x88 = 0xc000f20c60
+check: c000f20cf0: dap: alloc size 0x88 = 0xc000f20cf0
+check: c000f20d80: dap: alloc size 0x88 = 0xc000f20d80
+check: c000f20e10: dap: alloc size 0x88 = 0xc000f20e10
+check: c000f20ea0: dap: alloc size 0x88 = 0xc000f20ea0
+check: c000f20f30: dap: alloc size 0x88 = 0xc000f20f30
+check: c000f20fc0: dap: alloc size 0x88 = 0xc000f20fc0
+check: c000f21050: dap: alloc size 0x88 = 0xc000f21050
+check: c000f210e0: dap: alloc size 0x88 = 0xc000f210e0
+check: c000f21170: dap: alloc size 0x88 = 0xc000f21170
+check: c000f21200: dap: alloc size 0x88 = 0xc000f21200
+check: c000f21290: dap: alloc size 0x88 = 0xc000f21290
+check: c000f21320: dap: alloc size 0x88 = 0xc000f21320
+check: c000f213b0: dap: alloc size 0x88 = 0xc000f213b0
+check: c000f21440: dap: alloc size 0x88 = 0xc000f21440
+check: c000f214d0: dap: alloc size 0x88 = 0xc000f214d0
+check: c000f21560: dap: alloc size 0x88 = 0xc000f21560
+check: c000f215f0: dap: alloc size 0x88 = 0xc000f215f0
+check: c000f21680: dap: alloc size 0x88 = 0xc000f21680
+check: c000f21710: dap: alloc size 0x88 = 0xc000f21710
+check: c000f217a0: dap: alloc size 0x88 = 0xc000f217a0
+check: c000f21830: dap: alloc size 0x88 = 0xc000f21830
+----
+
+There are 5 in the output that are free and _un_marked.  And there are 7 that are free but marked.  Those 7 have never been allocated:
+
+[source,text]
+----
+$ for addr in c000f218c0 c000f21950 c000f21b00 c000f21c20 c000f21d40 c000f21e60 c000f21ef0; do echo "CHECK: $addr"; grep $addr dtrace.out ; done
+CHECK: c000f218c0
+CHECK: c000f21950
+CHECK: c000f21b00
+CHECK: c000f21c20
+CHECK: c000f21d40
+CHECK: c000f21e60
+CHECK: c000f21ef0
+----
+
+I dumped the entire memory contents from the core file to a text file so I could grep for references:
+
+[source,text]
+----
+> ::mappings ! awk '/\[/{ print $1",",$3"::dump -g8 -e" }' > memory-dump-commands.txt
+$ time mdb core.cockroach.1159 < memory-dump-commands.txt > memory.txt
+mdb: failed to read data at 0xfffffc7fef3f0000: no mapping for address
+
+real    0m36.982s
+user    0m13.571s
+sys     0m23.403s
+----
+
+Now, are any of those seven pointers referenced in memory?
+
+[source,text]
+----
+$ for addr in c000f218c0 c000f21950 c000f21b00 c000f21c20 c000f21d40 c000f21e60 c000f21ef0; do echo "CHECK: $addr"; grep $addr memory.txt ; done
+CHECK: c000f218c0
+c000f218c0:  0000000000000000 0000000000000000
+CHECK: c000f21950
+c000f21950:  0000000000000000 0000000000000000
+CHECK: c000f21b00
+c000f21b00:  0000000000000000 0000000000000000
+CHECK: c000f21c20
+c000f21c20:  0000000000000000 0000000000000000
+CHECK: c000f21d40
+c000f21d40:  0000000000000000 0000000000000000
+CHECK: c000f21e60
+c000f21e60:  0000000000000000 0000000000000000
+CHECK: c000f21ef0
+c000f21ef0:  0000000000000000 0000000000000000
+fffffc7fe9fffb60:  0000000000000037 000000c000f21ef0
+----
+
+Only the last one.  (Those other matching lines are just reporting the value _at_ that address.)  I poked around at fffffc7fe9fffb68 and found this looks like the stack of the Goroutine that panicked:
+
+[source,text]
+----
+# attempt to dump a stack trace as though fffffc7fe9fffb00 were a frame pointer
+> 0xfffffc7fe9fffb00$C
+fffffc7fe9fffb30 runtime.throw+0x74()
+fffffc7fe9fffbb0 runtime.(*mspan).reportZombies+0x345()
+fffffc7fe9fffc98 runtime.(*sweepLocked).sweep+0x35a()
+fffffc7fe9fffcc8 runtime.(*mcentral).uncacheSpan+0xcf()
+fffffc7fe9fffd10 runtime.(*mcache).releaseAll+0x134()
+fffffc7fe9fffd38 runtime.(*mcache).prepareForSweep+0x46()
+fffffc7fe9fffd50 runtime.acquirep+0x3d()
+fffffc7fe9fffd78 runtime.stopm+0xab()
+fffffc7fe9fffda0 runtime.gcstopm+0xcc()
+fffffc7fe9fffe98 runtime.findrunnable+0x59()
+fffffc7fe9fffef8 runtime.schedule+0x297()
+fffffc7fe9ffff28 runtime.park_m+0x18e()
+000000c0001acdd8 runtime.mcall+0x63()
+000000c0001ace68 runtime.chanrecv+0x5f7()
+000000c0001ace98 runtime.chanrecv1+0x2b()
+000000c0001acfd0 github.com/cockroachdb/cockroach/pkg/util/goschedstats.init.0.func1+0x1de()
+0000000000000000 runtime.goexit+1()
+----
+
+So I think that explains that reference, and the conclusion is that these seven addresses _aren't_ referenced anywhere else.  So why did they get marked?
+
+## Other stuff we've tried
+
+I've spent a fair bit of time reading a bunch of the related code (like `sweepLocked`, `mallocgc`, `nextFree`, `nextFreeFast`, `refillAllocCache`, etc).
+
+* Building with msan/asan/race detector: these aren't supported on our platform (illumos).
+* Build with `-dcheckptr`: tried this with the Go test suite but https://groups.google.com/g/golang-nuts/c/psjrUV2ZKyI[ran into a bunch of false positives]
+* `GODEBUG=cgocheck=2`: tried this but https://github.com/cockroachdb/cockroach/issues/92361[CockroachDB produces false positives here].  (They're violating the rules, but not in a way that seems like it would cause this problem.)
+* Tried running with `CGO_ENABLED=0` -- no effect.
+* Tried building with `CGO_ENABLED=0` -- it doesn't look like CockroachDB can be built that way.
+* Tried running with `GODEBUG=allocfreetrace=1` but it was too big an impact.
+
+I initially took this to be arbitrary memory corruption and went down some paths along those lines (e.g., processor errata), but increasingly that didn't seem right.  It's very specific invariants of the Go memory allocator that appear violated.
+
+There's a lot more detail in https://docs.google.com/document/d/1iUTZqvfLcgOneDCWqBo0buCgJPG5NZ4ysqDCyt96cqA/edit#[this document].
