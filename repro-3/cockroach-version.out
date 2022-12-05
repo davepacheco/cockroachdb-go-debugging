@@ -1,0 +1,440 @@
+runtime: marked free object in span 0xfffffc7fee33af40, elemsize=144 freeindex=44 (bad use of unsafe.Pointer? try -d=checkptr)
+0xc000f20000 alloc marked  
+0xc000f20090 alloc marked  
+0xc000f20120 alloc marked  
+0xc000f201b0 alloc marked  
+0xc000f20240 alloc marked  
+0xc000f202d0 alloc marked  
+0xc000f20360 alloc marked  
+0xc000f203f0 alloc marked  
+0xc000f20480 alloc marked  
+0xc000f20510 alloc marked  
+0xc000f205a0 alloc marked  
+0xc000f20630 alloc marked  
+0xc000f206c0 alloc marked  
+0xc000f20750 alloc marked  
+0xc000f207e0 alloc marked  
+0xc000f20870 alloc marked  
+0xc000f20900 alloc marked  
+0xc000f20990 alloc marked  
+0xc000f20a20 alloc marked  
+0xc000f20ab0 alloc marked  
+0xc000f20b40 alloc marked  
+0xc000f20bd0 alloc marked  
+0xc000f20c60 alloc marked  
+0xc000f20cf0 alloc marked  
+0xc000f20d80 alloc marked  
+0xc000f20e10 alloc marked  
+0xc000f20ea0 alloc marked  
+0xc000f20f30 alloc marked  
+0xc000f20fc0 alloc marked  
+0xc000f21050 alloc marked  
+0xc000f210e0 alloc marked  
+0xc000f21170 alloc marked  
+0xc000f21200 alloc marked  
+0xc000f21290 alloc marked  
+0xc000f21320 alloc marked  
+0xc000f213b0 alloc marked  
+0xc000f21440 alloc marked  
+0xc000f214d0 alloc marked  
+0xc000f21560 alloc marked  
+0xc000f215f0 alloc marked  
+0xc000f21680 alloc marked  
+0xc000f21710 alloc marked  
+0xc000f217a0 alloc marked  
+0xc000f21830 alloc marked  
+0xc000f218c0 free  marked   zombie
+0x000000c000f218c0:  0x0000000000000000  0x0000000000000000 
+0x000000c000f218d0:  0x0000000000000000  0x0000000000000000 
+0x000000c000f218e0:  0x0000000000000000  0x0000000000000000 
+0x000000c000f218f0:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21900:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21910:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21920:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21930:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21940:  0x0000000000000000  0x0000000000000000 
+0xc000f21950 free  marked   zombie
+0x000000c000f21950:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21960:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21970:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21980:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21990:  0x0000000000000000  0x0000000000000000 
+0x000000c000f219a0:  0x0000000000000000  0x0000000000000000 
+0x000000c000f219b0:  0x0000000000000000  0x0000000000000000 
+0x000000c000f219c0:  0x0000000000000000  0x0000000000000000 
+0x000000c000f219d0:  0x0000000000000000  0x0000000000000000 
+0xc000f219e0 free  unmarked
+0xc000f21a70 free  unmarked
+0xc000f21b00 free  marked   zombie
+0x000000c000f21b00:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21b10:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21b20:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21b30:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21b40:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21b50:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21b60:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21b70:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21b80:  0x0000000000000000  0x0000000000000000 
+0xc000f21b90 free  unmarked
+0xc000f21c20 free  marked   zombie
+0x000000c000f21c20:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21c30:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21c40:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21c50:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21c60:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21c70:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21c80:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21c90:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21ca0:  0x0000000000000000  0x0000000000000000 
+0xc000f21cb0 free  unmarked
+0xc000f21d40 free  marked   zombie
+0x000000c000f21d40:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21d50:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21d60:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21d70:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21d80:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21d90:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21da0:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21db0:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21dc0:  0x0000000000000000  0x0000000000000000 
+0xc000f21dd0 free  unmarked
+0xc000f21e60 free  marked   zombie
+0x000000c000f21e60:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21e70:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21e80:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21e90:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21ea0:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21eb0:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21ec0:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21ed0:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21ee0:  0x0000000000000000  0x0000000000000000 
+0xc000f21ef0 free  marked   zombie
+0x000000c000f21ef0:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21f00:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21f10:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21f20:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21f30:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21f40:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21f50:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21f60:  0x0000000000000000  0x0000000000000000 
+0x000000c000f21f70:  0x0000000000000000  0x0000000000000000 
+fatal error: found pointer to free object
+
+runtime stack:
+runtime.throw({0x6097e1e, 0x1c})
+	/opt/ooce/go-1.17/src/runtime/panic.go:1198 +0x74 fp=0xfffffc7fe9fffb40 sp=0xfffffc7fe9fffb10 pc=0x127d6b4
+runtime.(*mspan).reportZombies(0xfffffc7fee33af40)
+	/opt/ooce/go-1.17/src/runtime/mgcsweep.go:691 +0x345 fp=0xfffffc7fe9fffbc0 sp=0xfffffc7fe9fffb40 pc=0x1269505
+runtime.(*sweepLocked).sweep(0xfffffc7fe9fffcc0, 0x0)
+	/opt/ooce/go-1.17/src/runtime/mgcsweep.go:519 +0x35a fp=0xfffffc7fe9fffca8 sp=0xfffffc7fe9fffbc0 pc=0x126881a
+runtime.(*mcentral).uncacheSpan(0xb3dc9e8, 0xfffffc7fee33af40)
+	/opt/ooce/go-1.17/src/runtime/mcentral.go:223 +0xcf fp=0xfffffc7fe9fffcd8 sp=0xfffffc7fe9fffca8 pc=0x125a18f
+runtime.(*mcache).releaseAll(0xfffffc7fef1f8108)
+	/opt/ooce/go-1.17/src/runtime/mcache.go:279 +0x134 fp=0xfffffc7fe9fffd20 sp=0xfffffc7fe9fffcd8 pc=0x1259694
+runtime.(*mcache).prepareForSweep(0xfffffc7fef1f8108)
+	/opt/ooce/go-1.17/src/runtime/mcache.go:317 +0x46 fp=0xfffffc7fe9fffd48 sp=0xfffffc7fe9fffd20 pc=0x12597a6
+runtime.acquirep(0xc000082000)
+	/opt/ooce/go-1.17/src/runtime/proc.go:5141 +0x3d fp=0xfffffc7fe9fffd60 sp=0xfffffc7fe9fffd48 pc=0x128bedd
+runtime.stopm()
+	/opt/ooce/go-1.17/src/runtime/proc.go:2409 +0xab fp=0xfffffc7fe9fffd88 sp=0xfffffc7fe9fffd60 pc=0x12848ab
+runtime.gcstopm()
+	/opt/ooce/go-1.17/src/runtime/proc.go:2658 +0xcc fp=0xfffffc7fe9fffdb0 sp=0xfffffc7fe9fffd88 pc=0x128548c
+runtime.findrunnable()
+	/opt/ooce/go-1.17/src/runtime/proc.go:2715 +0x59 fp=0xfffffc7fe9fffea8 sp=0xfffffc7fe9fffdb0 pc=0x1285699
+runtime.schedule()
+	/opt/ooce/go-1.17/src/runtime/proc.go:3367 +0x297 fp=0xfffffc7fe9ffff08 sp=0xfffffc7fe9fffea8 pc=0x1287277
+runtime.park_m(0xc0001b3860)
+	/opt/ooce/go-1.17/src/runtime/proc.go:3516 +0x18e fp=0xfffffc7fe9ffff38 sp=0xfffffc7fe9ffff08 pc=0x128788e
+runtime.mcall()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:337 +0x63 fp=0xfffffc7fe9ffff48 sp=0xfffffc7fe9ffff38 pc=0x12b4b23
+
+goroutine 1 [runnable, locked to thread]:
+runtime.mapassign(0x59ef800, 0xc000efc600, 0xc000b6eab8)
+	/opt/ooce/go-1.17/src/runtime/map.go:571 +0x585 fp=0xc000b6bf38 sp=0xc000b6bf30 pc=0x1250e65
+github.com/aws/aws-sdk-go/aws/endpoints.init()
+	/home/dap/garbage-compactor/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/vendor/github.com/aws/aws-sdk-go/aws/endpoints/defaults.go:3916 +0x52ec7 fp=0xc000b7f7a8 sp=0xc000b6bf38 pc=0x4e35367
+runtime.doInit(0xaf5a160)
+	/opt/ooce/go-1.17/src/runtime/proc.go:6498 +0x129 fp=0xc000b7f8f8 sp=0xc000b7f7a8 pc=0x128e949
+runtime.doInit(0xaf63380)
+	/opt/ooce/go-1.17/src/runtime/proc.go:6475 +0x7e fp=0xc000b7fa48 sp=0xc000b7f8f8 pc=0x128e89e
+runtime.doInit(0xaf788c0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:6475 +0x7e fp=0xc000b7fb98 sp=0xc000b7fa48 pc=0x128e89e
+runtime.doInit(0xaf58060)
+	/opt/ooce/go-1.17/src/runtime/proc.go:6475 +0x7e fp=0xc000b7fce8 sp=0xc000b7fb98 pc=0x128e89e
+runtime.doInit(0xafb0ae0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:6475 +0x7e fp=0xc000b7fe38 sp=0xc000b7fce8 pc=0x128e89e
+runtime.doInit(0xaf503a0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:6475 +0x7e fp=0xc000b7ff88 sp=0xc000b7fe38 pc=0x128e89e
+runtime.main()
+	/opt/ooce/go-1.17/src/runtime/proc.go:238 +0x205 fp=0xc000b7ffe0 sp=0xc000b7ff88 pc=0x12801c5
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc000b7ffe8 sp=0xc000b7ffe0 pc=0x12b6d41
+
+goroutine 2 [force gc (idle)]:
+runtime.gopark(0x747b930, 0xb38cf30, 0x11, 0x14, 0x1)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000aefb0 sp=0xc0000aef90 pc=0x1280685
+runtime.goparkunlock(...)
+	/opt/ooce/go-1.17/src/runtime/proc.go:372
+runtime.forcegchelper()
+	/opt/ooce/go-1.17/src/runtime/proc.go:306 +0xc5 fp=0xc0000aefe0 sp=0xc0000aefb0 pc=0x12804e5
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000aefe8 sp=0xc0000aefe0 pc=0x12b6d41
+created by runtime.init.7
+	/opt/ooce/go-1.17/src/runtime/proc.go:294 +0x35
+
+goroutine 3 [runnable]:
+runtime.gopark(0x747b930, 0xb396e60, 0xc, 0x14, 0x1)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000af7b0 sp=0xc0000af790 pc=0x1280685
+runtime.goparkunlock(...)
+	/opt/ooce/go-1.17/src/runtime/proc.go:372
+runtime.bgsweep()
+	/opt/ooce/go-1.17/src/runtime/mgcsweep.go:182 +0x10d fp=0xc0000af7e0 sp=0xc0000af7b0 pc=0x1267c4d
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000af7e8 sp=0xc0000af7e0 pc=0x12b6d41
+created by runtime.gcenable
+	/opt/ooce/go-1.17/src/runtime/mgc.go:181 +0x75
+
+goroutine 4 [GC scavenge wait]:
+runtime.gopark(0x747b930, 0xb397f60, 0xd, 0x14, 0x1)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000aff80 sp=0xc0000aff60 pc=0x1280685
+runtime.goparkunlock(...)
+	/opt/ooce/go-1.17/src/runtime/proc.go:372
+runtime.bgscavenge()
+	/opt/ooce/go-1.17/src/runtime/mgcscavenge.go:314 +0x2bb fp=0xc0000affe0 sp=0xc0000aff80 pc=0x1265c5b
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000affe8 sp=0xc0000affe0 pc=0x12b6d41
+created by runtime.gcenable
+	/opt/ooce/go-1.17/src/runtime/mgc.go:182 +0x8d
+
+goroutine 5 [finalizer wait]:
+runtime.gopark(0x747b930, 0xb3e37d8, 0x10, 0x14, 0x1)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000ae740 sp=0xc0000ae720 pc=0x1280685
+runtime.goparkunlock(...)
+	/opt/ooce/go-1.17/src/runtime/proc.go:372
+runtime.runfinq()
+	/opt/ooce/go-1.17/src/runtime/mfinal.go:177 +0xc6 fp=0xc0000ae7e0 sp=0xc0000ae740 pc=0x125c686
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000ae7e8 sp=0xc0000ae7e0 pc=0x12b6d41
+created by runtime.createfing
+	/opt/ooce/go-1.17/src/runtime/mfinal.go:157 +0x57
+
+goroutine 18 [chan receive]:
+runtime.gopark(0x747b630, 0xc000102238, 0xe, 0x17, 0x2)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000aa6a8 sp=0xc0000aa688 pc=0x1280685
+runtime.chanrecv(0xc0001021e0, 0xc0000aa7b8, 0x1)
+	/opt/ooce/go-1.17/src/runtime/chan.go:576 +0x5f7 fp=0xc0000aa738 sp=0xc0000aa6a8 pc=0x1247377
+runtime.chanrecv2(0xc0001021e0, 0xc0000aa7b8)
+	/opt/ooce/go-1.17/src/runtime/chan.go:444 +0x2b fp=0xc0000aa768 sp=0xc0000aa738 pc=0x1246d6b
+github.com/cockroachdb/cockroach/pkg/util/log.flushDaemon()
+	/home/dap/garbage-compactor/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/pkg/util/log/log_flush.go:75 +0x76 fp=0xc0000aa7e0 sp=0xc0000aa768 pc=0x1d49396
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000aa7e8 sp=0xc0000aa7e0 pc=0x12b6d41
+created by github.com/cockroachdb/cockroach/pkg/util/log.init.5
+	/home/dap/garbage-compactor/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/pkg/util/log/log_flush.go:41 +0x35
+
+goroutine 19 [chan receive]:
+runtime.gopark(0x747b630, 0xc0000da118, 0xe, 0x17, 0x2)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000aae88 sp=0xc0000aae68 pc=0x1280685
+runtime.chanrecv(0xc0000da0c0, 0xc0000aafb0, 0x1)
+	/opt/ooce/go-1.17/src/runtime/chan.go:576 +0x5f7 fp=0xc0000aaf18 sp=0xc0000aae88 pc=0x1247377
+runtime.chanrecv2(0xc0000da0c0, 0xc0000aafb0)
+	/opt/ooce/go-1.17/src/runtime/chan.go:444 +0x2b fp=0xc0000aaf48 sp=0xc0000aaf18 pc=0x1246d6b
+github.com/cockroachdb/cockroach/pkg/util/log.signalFlusher()
+	/home/dap/garbage-compactor/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/pkg/util/log/log_flush.go:98 +0x145 fp=0xc0000aafe0 sp=0xc0000aaf48 pc=0x1d49685
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000aafe8 sp=0xc0000aafe0 pc=0x12b6d41
+created by github.com/cockroachdb/cockroach/pkg/util/log.init.5
+	/home/dap/garbage-compactor/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/pkg/util/log/log_flush.go:42 +0x4d
+
+goroutine 6 [select, locked to thread]:
+runtime.gopark(0x747b988, 0x0, 0x9, 0x18, 0x1)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000b0620 sp=0xc0000b0600 pc=0x1280685
+runtime.selectgo(0xc0000b07a8, 0xc0000b0790, 0x0, 0x0, 0x2, 0x1)
+	/opt/ooce/go-1.17/src/runtime/select.go:327 +0x7b0 fp=0xc0000b0740 sp=0xc0000b0620 pc=0x1291a90
+runtime.ensureSigM.func1()
+	/opt/ooce/go-1.17/src/runtime/signal_unix.go:890 +0x1f2 fp=0xc0000b07e0 sp=0xc0000b0740 pc=0x12ae3b2
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000b07e8 sp=0xc0000b07e0 pc=0x12b6d41
+created by runtime.ensureSigM
+	/opt/ooce/go-1.17/src/runtime/signal_unix.go:873 +0x105
+
+goroutine 7 [syscall]:
+runtime.notetsleepg(0xb3e48a0, 0xffffffffffffffff)
+	/opt/ooce/go-1.17/src/runtime/lock_sema.go:295 +0x45 fp=0xc0000b0f98 sp=0xc0000b0f58 pc=0x124d665
+os/signal.signal_recv()
+	/opt/ooce/go-1.17/src/runtime/sigqueue.go:169 +0xab fp=0xc0000b0fc0 sp=0xc0000b0f98 pc=0x12b228b
+os/signal.loop()
+	/opt/ooce/go-1.17/src/os/signal/signal_unix.go:24 +0x25 fp=0xc0000b0fe0 sp=0xc0000b0fc0 pc=0x1d27a65
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000b0fe8 sp=0xc0000b0fe0 pc=0x12b6d41
+created by os/signal.Notify.func1.1
+	/opt/ooce/go-1.17/src/os/signal/signal.go:151 +0x3a
+
+goroutine 20 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc000116260, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000ab760 sp=0xc0000ab740 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0000ab7e0 sp=0xc0000ab760 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000ab7e8 sp=0xc0000ab7e0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 34 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc000116280, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0001ae760 sp=0xc0001ae740 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0001ae7e0 sp=0xc0001ae760 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0001ae7e8 sp=0xc0001ae7e0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 35 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc00007c080, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0001aef60 sp=0xc0001aef40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0001aefe0 sp=0xc0001aef60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0001aefe8 sp=0xc0001aefe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 36 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc0004ec0c0, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0001af760 sp=0xc0001af740 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0001af7e0 sp=0xc0001af760 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0001af7e8 sp=0xc0001af7e0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 21 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc0004ec0e0, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000abf60 sp=0xc0000abf40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0000abfe0 sp=0xc0000abf60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000abfe8 sp=0xc0000abfe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 22 [running]:
+	goroutine running on other thread; stack unavailable
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 8 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc0001162a0, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000b1760 sp=0xc0000b1740 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0000b17e0 sp=0xc0000b1760 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000b17e8 sp=0xc0000b17e0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 37 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc0004ec100, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0001aff60 sp=0xc0001aff40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0001affe0 sp=0xc0001aff60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0001affe8 sp=0xc0001affe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 23 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc00007c0c0, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000acf60 sp=0xc0000acf40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0000acfe0 sp=0xc0000acf60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000acfe8 sp=0xc0000acfe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 9 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc0001162c0, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000b1f60 sp=0xc0000b1f40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0000b1fe0 sp=0xc0000b1f60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000b1fe8 sp=0xc0000b1fe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 38 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc0004ec120, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000bcf60 sp=0xc0000bcf40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0000bcfe0 sp=0xc0000bcf60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000bcfe8 sp=0xc0000bcfe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 24 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc00007c0e0, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000c1f60 sp=0xc0000c1f40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0000c1fe0 sp=0xc0000c1f60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000c1fe8 sp=0xc0000c1fe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 10 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc0001162e0, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0001aa760 sp=0xc0001aa740 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0001aa7e0 sp=0xc0001aa760 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0001aa7e8 sp=0xc0001aa7e0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 39 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc0004ec140, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0001b0f60 sp=0xc0001b0f40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0001b0fe0 sp=0xc0001b0f60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0001b0fe8 sp=0xc0001b0fe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 25 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc00007c100, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0000adf60 sp=0xc0000adf40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc0000adfe0 sp=0xc0000adf60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0000adfe8 sp=0xc0000adfe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 11 [GC worker (idle)]:
+runtime.gopark(0x747b6d0, 0xc000116300, 0x18, 0x14, 0x0)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc000754f60 sp=0xc000754f40 pc=0x1280685
+runtime.gcBgMarkWorker()
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1200 +0x118 fp=0xc000754fe0 sp=0xc000754f60 pc=0x125f5b8
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc000754fe8 sp=0xc000754fe0 pc=0x12b6d41
+created by runtime.gcBgMarkStartWorkers
+	/opt/ooce/go-1.17/src/runtime/mgc.go:1124 +0x37
+
+goroutine 67 [chan receive]:
+runtime.gopark(0x747b630, 0xc000758b98, 0xe, 0x17, 0x2)
+	/opt/ooce/go-1.17/src/runtime/proc.go:366 +0x105 fp=0xc0001acde8 sp=0xc0001acdc8 pc=0x1280685
+runtime.chanrecv(0xc000758b40, 0xc0001acf28, 0x1)
+	/opt/ooce/go-1.17/src/runtime/chan.go:576 +0x5f7 fp=0xc0001ace78 sp=0xc0001acde8 pc=0x1247377
+runtime.chanrecv1(0xc000758b40, 0xc0001acf28)
+	/opt/ooce/go-1.17/src/runtime/chan.go:439 +0x2b fp=0xc0001acea8 sp=0xc0001ace78 pc=0x1246d2b
+github.com/cockroachdb/cockroach/pkg/util/goschedstats.init.0.func1()
+	/home/dap/garbage-compactor/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/pkg/util/goschedstats/runnable.go:165 +0x1de fp=0xc0001acfe0 sp=0xc0001acea8 pc=0x43b511e
+runtime.goexit()
+	/opt/ooce/go-1.17/src/runtime/asm_amd64.s:1581 +0x1 fp=0xc0001acfe8 sp=0xc0001acfe0 pc=0x12b6d41
+created by github.com/cockroachdb/cockroach/pkg/util/goschedstats.init.0
+	/home/dap/garbage-compactor/cockroach/cache/gopath/src/github.com/cockroachdb/cockroach/pkg/util/goschedstats/runnable.go:157 +0x35

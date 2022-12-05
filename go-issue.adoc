@@ -2,14 +2,7 @@
 :toc: left
 :numbered:
 
-
-
 # Debugging CockroachDB/Go runtime memory allocator
-
-XXX TODO 
-- add to this repo the D script and DTrace output
-- add a tl;dr
-
 
 ## Summary
 
@@ -27,7 +20,7 @@ I'd welcome any help at all, whether answering specific questions about specific
 
 ## Current status and questions
 
-I've put together a DTrace script that traces:
+I've put together a DTrace script (xref:gotracemem.d[]) that traces:
 
 * every mallocgc call (showing the requested size and returned pointer)
 * every clobberfree operation (so, each time an object is collected by GC)
@@ -36,9 +29,16 @@ I've put together a DTrace script that traces:
 
 It has much lower overhead than allocfreetrace=1 and I've been able to successfully reproduce these failures with this tracing enabled.  I'm also running with `GOTRACEBACK=crash` and `GODEBUG=clobberfree=1`.  I've caught two cases so far, both from an execution of `cockroach version`, where I've got the DTrace output and a core file triggered by the fatal error.
 
+I basically run this as:
+
+[source,text]
+----
+GOTRACEBACK=crash GODEBUG=clobberfree=1 ./gotracemem.d -c 'cockroach version'
+----
+
 ### Case 1: crash during mallocgc
 
-(in my notes, this one's called "repro-2")
+(in my notes, this one's called xref:repro-2[])
 
 [%collapsible%open]
 ====
@@ -795,7 +795,7 @@ There's a lot that's confusing here:
 
 ### Case 2: zombies
 
-(in my notes, this one's called "repro-3")
+(in my notes, this one's called xref:repro-3[])
 
 Similar initial conditions (running `cockroach version` with my DTrace script, plus GOTRACEBACK=crash GODEBUG=cloberfree=1), but this time we failed during sweeping:
 
